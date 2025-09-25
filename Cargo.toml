@@ -15,7 +15,10 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 anyhow = "1.0"
 colored = "3.0.0"
+md5 = "0.8.0"
+chrono = "0.4.42"
 
-[[bin]]
-name = "openconnect"
-path = "src/bin/openconnect.rs"
+[profile.release]
+opt-level = "z" # 选择更激进的优化，旨在最小化代码大小
+strip = true # 移除符号表和调试信息，显著减小文件体积。
+lto=true # 启用Link Time Optimization（链接时优化），能进一步减小代码大小和提高性能。

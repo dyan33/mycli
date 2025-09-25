@@ -1,43 +1,60 @@
 use anyhow::{Ok, Result, bail};
 use clap::Parser;
 use colored::Colorize;
+use md5::compute;
 use reqwest::blocking::Client;
 use reqwest::header::{REFERER, USER_AGENT};
 use serde_json::Value;
-use tracing::{Level};
+use std::fs;
+use std::io::BufRead;
 
-/// 有英文道翻译工具
+/// 英文翻译工具
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// 需要翻译的单词
-    #[arg(short, long, required = true)]
+    /// 需要翻译的单词或者句子
+    #[arg(index = 1)]
     word: String,
 
-    /// 配置文件
-    #[arg(short, long, default_value = "~/.config/youdao/youdao.csv")]
-    dict_path: String,
-
-    ///  打印详细日志
-    #[arg(short, long, default_value = "false")]
-    verbose: bool,
+    /// 生词本路径
+    #[arg(short, long,default_value="")]
+    word_path: String,
 }
 
 #[derive(Debug)]
 enum Translate {
-    EnZh((), String, Vec<String>),
-    ZhEn(String, String),
-    OTHER(String),
+    En2Zh((), String, Vec<String>),
+    Zh2En(String, String),
+    SUGGEST(String),
+    FANYI(String),
+    NOTFOUND,
 }
 
-fn tranlate(world: &str) -> Result<Translate> {
-    let params = [
-        ("q", world),
-        ("le", "en"),
-        ("t", "3"),
-        ("client", "web"),
-        ("keyform", "webdict"),
-    ];
+#[inline]
+fn md5(str: &str) -> String {
+    let digest = compute(str);
+    format!("{:x}", digest)
+}
+
+fn sign_param(word: &str) -> [(String, String); 6] {
+    let r = format!("{word}webdict");
+    let time = r.chars().count() % 10;
+    let o = md5(&r);
+    let n = format!("web{word}{time}Mk6hqtUp33DGGtoS63tTJbMUYjRrG1Lu{o}");
+    let sign = md5(&n);
+
+    [
+        ("q".into(), word.into()),
+        ("le".into(), "en".into()),
+        ("t".into(), format!("{time}")),
+        ("client".into(), "web".into()),
+        ("keyfrom".into(), "webdict".into()),
+        ("sign".into(), sign),
+    ]
+}
+
+fn tranlate(word: &str) -> Result<Translate> {
+    let params = sign_param(word);
 
     let response=Client::new()
     .post("https://dict.youdao.com/jsonapi_s?doctype=json&jsonversion=4")
@@ -54,9 +71,16 @@ fn tranlate(world: &str) -> Result<Translate> {
         bail!(value)
     }
 
+    let fainyi = &value["fanyi"];
+
     let lang = value["meta"]["guessLanguage"].as_str().unwrap_or_default();
 
-    let trans = if lang == "eng" && !value["ec"].is_null() {
+    let trans = if !fainyi.is_null() {
+        // 句子翻译
+        let tran = fainyi["tran"].as_str().unwrap();
+        Translate::FANYI(tran.to_string())
+    } else if lang == "eng" && !value["ec"].is_null() {
+        // 英-中
         let value = &value["ec"]["word"];
 
         let mut phonetic: Vec<String> = Vec::with_capacity(2);
@@ -88,11 +112,12 @@ fn tranlate(world: &str) -> Result<Translate> {
             })
             .collect();
 
-        Translate::EnZh((), phonetic.join("\t"),explains)
+        Translate::En2Zh((), phonetic.join("\t"), explains)
     } else if lang == "zh" && !value["ce"].is_null() {
+        // 中-英
         let value = &value["ce"]["word"];
 
-        let explain: Vec<(&str,&str)> = value["trs"]
+        let explain: Vec<(&str, &str)> = value["trs"]
             .as_array()
             .unwrap()
             .iter()
@@ -100,14 +125,15 @@ fn tranlate(world: &str) -> Result<Translate> {
                 let en = t["#text"].as_str().unwrap();
                 let zh = t["#tran"].as_str().unwrap();
 
-                (en,zh)
+                (en, zh)
             })
             .collect();
 
-        let tuple=explain.get(0).unwrap();
+        let tuple = explain.get(0).unwrap();
 
-        Translate::ZhEn(tuple.0.to_string(),tuple.1.to_string())
-    } else {
+        Translate::Zh2En(tuple.0.to_string(), tuple.1.to_string())
+    } else if !value["typos"].is_null() {
+        // 建议
         let typo = &value["typos"]["typo"];
 
         let explain: Vec<String> = typo
@@ -124,51 +150,94 @@ fn tranlate(world: &str) -> Result<Translate> {
 
         let explain = explain.join("\n------\n");
 
-        Translate::OTHER(format!("🤔 您要找的是不是:\n\n{}",explain.yellow()))
+        Translate::SUGGEST(format!("🤔 您要找的是不是:\n\n{}", explain.yellow()))
+    } else {
+        Translate::NOTFOUND //无法翻译
     };
 
     Ok(trans)
 }
 
-fn println(trans: &Translate) {
+fn pertty_print(trans: &Translate) {
     let line = "--------------------------------------------------------------------";
 
     println!("🎉 {}", "翻译结果:".green());
     println!("{line}");
 
     match trans {
-        Translate::EnZh(_, phonetic, explains) => {
+        Translate::En2Zh(_, phonetic, explains) => {
             println!("🧑‍🏫 {}", phonetic.magenta());
             println!("{}", "------");
             println!("🇨🇳 {}", explains.join("\n🇨🇳 ").red());
         }
-        Translate::ZhEn(world, explain) => {
+        Translate::Zh2En(world, explain) => {
             println!("🇺🇸 {}", world.magenta());
             println!("{}", "------");
             println!("🇨🇳 {}", explain.red());
         }
-        Translate::OTHER(explain) => {
-            println!("{}", explain.red());
+        Translate::SUGGEST(explain) => {
+            println!("{}", explain.magenta());
+        }
+        Translate::FANYI(tran) => {
+            println!("🧑‍🏫 {}", tran.magenta());
+        }
+        Translate::NOTFOUND => {
+            println!("⚠️ {}", "没有找到".yellow());
         }
     }
     println!("\n{line}");
 }
 
+fn save_word_to_csv(word: &str, word_file: &str, trans: &Translate) {
+    use chrono::Utc;
+    use std::fs::OpenOptions;
+    use std::io::{BufReader, Write};
+
+    match trans {
+        Translate::En2Zh((), a, explains) => {
+            // 记录
+            let now = Utc::now().format("%Y-%m-%d %H:%M:%S").to_string();
+
+            let explains = explains.join(";");
+
+            let line = format!("{word},{a},{explains},{now}");
+
+            // 目录判断
+            let dir = std::path::Path::new(word_file).parent().expect("路径错误");
+
+            if !dir.exists() {
+                fs::create_dir_all(dir).unwrap();
+            }
+
+            // 写入文件
+            let mut file = OpenOptions::new()
+                .create(true) // 文件不存在,则创建
+                .append(true) // 如果文件存在，则追加内容
+                .read(true)
+                .open(word_file)
+                .unwrap();
+
+            //首次写入表头
+            if let None = BufReader::new(&file).lines().next() {
+                writeln!(file, "单词,发音,解释,时间").unwrap();
+            }
+
+            writeln!(file, "{}", line).unwrap();
+        }
+        _ => (),
+    }
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    if args.verbose {
-        // 详细日志模式
-        tracing_subscriber::fmt()
-            .with_max_level(Level::DEBUG)
-            .init();
-    } else {
-        tracing_subscriber::fmt().with_max_level(Level::WARN).init();
-    }
-
     let trans = tranlate(&args.word)?;
 
-    println(&trans);
+    pertty_print(&trans);
+
+    if !args.word_path.is_empty() {
+        save_word_to_csv(&args.word, &args.word_path, &trans);
+    }
 
     Ok(())
 }
@@ -180,8 +249,17 @@ pub mod tests {
 
     #[test]
     fn test_translate() {
-        let value = tranlate("pear").unwrap();
+        let value = tranlate("生词本").unwrap();
 
         println!("response:\n{:?}", value)
+    }
+
+    #[test]
+    fn test_file_path() {
+        use std::path::Path;
+
+        let path = Path::new("youdao.csv");
+
+        println!("path: {}", path.exists())
     }
 }
