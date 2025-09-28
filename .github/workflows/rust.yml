@@ -79,15 +79,24 @@ jobs:
       run: |
         mkdir -p artifacts
         if [ "${{ matrix.os }}" = "windows-latest" ]; then
-          cp "target/${{ matrix.target }}/release/mycli.exe" "artifacts/mycli-${{ matrix.name }}.exe"
+          cp "target/${{ matrix.target }}/release/youdao.exe" "artifacts/yodao-${{ matrix.name }}.exe"
+          cp "target/${{ matrix.target }}/release/subparse.exe" "artifacts/subparse-${{ matrix.name }}.exe"
         else
-          cp "target/${{ matrix.target }}/release/mycli" "artifacts/mycli-${{ matrix.name }}"
+          cp "target/${{ matrix.target }}/release/youdao" "artifacts/youdao-${{ matrix.name }}"
+          cp "target/${{ matrix.target }}/release/subparse" "artifacts/subparse-${{ matrix.name }}"
         fi
     
-    - name: Upload artifacts
+    - name: Upload youdao artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: mycli-${{ matrix.name }}
+        name: youdao-${{ matrix.name }}
+        path: artifacts/*
+        retention-days: 30
+
+    - name: Upload subparse artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: subparse-${{ matrix.name }}
         path: artifacts/*
         retention-days: 30
 
