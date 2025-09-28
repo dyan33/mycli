@@ -86,17 +86,9 @@ jobs:
           cp "target/${{ matrix.target }}/release/subparse" "artifacts/subparse-${{ matrix.name }}"
         fi
     
-    - name: Upload youdao artifacts
+    - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: youdao-${{ matrix.name }}
-        path: artifacts/*
-        retention-days: 30
-
-    - name: Upload subparse artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: subparse-${{ matrix.name }}
         path: artifacts/*
         retention-days: 30
 
