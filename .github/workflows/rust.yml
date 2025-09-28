@@ -89,6 +89,7 @@ jobs:
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
+        name: mycli-${{ matrix.name }}
         path: artifacts/*
         retention-days: 30
 
