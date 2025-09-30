@@ -123,7 +123,10 @@ fn tranlate(word: &str) -> Result<Translate> {
             .iter()
             .map(|t| {
                 let en = t["#text"].as_str().unwrap();
-                let zh = t["#tran"].as_str().unwrap();
+                let zh = match &t["#tran"] {
+                    Value::String(s)=>  &s,
+                    _=>"",
+                };
 
                 (en, zh)
             })
@@ -249,7 +252,7 @@ pub mod tests {
 
     #[test]
     fn test_translate() {
-        let value = tranlate("生词本").unwrap();
+        let value = tranlate("办公室").unwrap();
 
         println!("response:\n{:?}", value)
     }
