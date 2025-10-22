@@ -59,6 +59,10 @@ fn parse_vless(url: Url) -> Value {
 
     let fp = query.get("fp").map(|v| v.to_string()).unwrap();
 
+    let network=query.get("type").unwrap().to_string();
+
+    let network= if network=="ws" {"tcp"} else {&network};
+
     json!({
         "type": "vless",
         "tag": tag,
@@ -66,7 +70,7 @@ fn parse_vless(url: Url) -> Value {
         "server_port": url.port(),
         "uuid": url.username(),
         "flow": query.get("flow"),
-        "network": query.get("type"),
+        "network": network,
         "tls": {
             "enabled": true,
             "server_name": query.get("sni"),
@@ -153,7 +157,7 @@ fn parse_urls(urls: Vec<&str>) -> Vec<Value> {
                         "hysteria2" => parse_hysteria2(url_parsed),
                         _ => Value::Null,
                     };
-                    
+
                     if let Some(name)=&sub_name {
 
                         let mut val=value;
@@ -163,7 +167,7 @@ fn parse_urls(urls: Vec<&str>) -> Vec<Value> {
                         let tag=format!("{}:{}",name,tag);
 
                         val["tag"]=tag.into();
-                        
+
                         return val;
                     }
                     value
@@ -268,7 +272,7 @@ struct  Args{
         ])]
     ingores:Vec<String>,
 
-    
+
     #[arg(short,long,default_value="false")]
     verbose:bool
 
@@ -287,7 +291,7 @@ fn main() {
     }else {
        tracing_subscriber::fmt()
                     .with_max_level(Level::WARN)
-                    .init(); 
+                    .init();
     }
 
 
@@ -298,7 +302,7 @@ fn main() {
     );
 
 
-    let path= if args.save_config.starts_with("~/") { 
+    let path= if args.save_config.starts_with("~/") {
         dirs::home_dir().expect("获取Home目录失败").join(&args.save_config[2..])
      }else {
          PathBuf::from(args.save_config)
@@ -309,7 +313,7 @@ fn main() {
     }
 
     let path=path.as_path();
-    
+
     fs::write(path, serde_json::to_string_pretty(&config).unwrap()).expect(&format!("保存文件失败: {:?}",path));
 
     info!("保存至: {:?}",path);
